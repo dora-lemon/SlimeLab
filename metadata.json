@@ -1,0 +1,5 @@
+{
+  "name": "Slime Physics Lab",
+  "description": "A fluid-like soft body simulation using particle interactions and metaball rendering. Visualize how cohesion and repulsion forces create a slime envelope.",
+  "requestFramePermissions": []
+}
