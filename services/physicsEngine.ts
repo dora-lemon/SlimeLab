@@ -40,26 +40,30 @@ export class PhysicsEngine {
       this.particles.push({
         id: i,
         position: { x, y },
-        velocity: { 
-            x: (Math.random() - 0.5) * 50, 
-            y: (Math.random() - 0.5) * 50 
+        velocity: {
+            x: (Math.random() - 0.5) * 50,
+            y: (Math.random() - 0.5) * 50
         },
         force: { x: 0, y: 0 },
         mass: 1,
         isFixed: false,
         radius: 10, // Physical collision radius (approx)
-        type: isEye ? 'eye' : 'body'
+        type: isEye ? 'eye' : 'body',
+        isEmitted: false // Initially all particles are in-body
       });
     }
   }
 
   launchParticle() {
-    // Find a body particle (not an eye) to launch
-    const bodyParticles = this.particles.filter(p => p.type !== 'eye');
+    // Find a body particle (not an eye) that is not emitted to launch
+    const bodyParticles = this.particles.filter(p => p.type !== 'eye' && !p.isEmitted);
     if (bodyParticles.length === 0) return;
 
     // Pick a random body particle
     const particle = bodyParticles[Math.floor(Math.random() * bodyParticles.length)];
+
+    // Mark as emitted
+    particle.isEmitted = true;
 
     // Launch it upward with slight random angle
     const launchSpeed = 500 + Math.random() * 200;
@@ -70,7 +74,8 @@ export class PhysicsEngine {
   }
 
   launchChargedParticle(targetPosition: Vector2, velocityMagnitude: number) {
-    const bodyParticles = this.particles.filter(p => p.type !== 'eye');
+    // Find body particles (not eyes) that are not emitted
+    const bodyParticles = this.particles.filter(p => p.type !== 'eye' && !p.isEmitted);
     if (bodyParticles.length === 0) return;
 
     // Select bottom-most particle (feels more natural for "launching")
@@ -83,6 +88,9 @@ export class PhysicsEngine {
         selectedParticle = p;
       }
     }
+
+    // Mark as emitted
+    selectedParticle.isEmitted = true;
 
     // Calculate direction to mouse cursor
     const dx = targetPosition.x - selectedParticle.position.x;
@@ -99,6 +107,53 @@ export class PhysicsEngine {
     // Apply velocity in direction of mouse
     selectedParticle.velocity.x = (dx / distance) * velocityMagnitude;
     selectedParticle.velocity.y = (dy / distance) * velocityMagnitude;
+  }
+
+  // Re-absorption constants
+  private readonly REABSORPTION_VELOCITY_THRESHOLD = 50; // units/sec
+  private readonly REABSORPTION_DISTANCE_THRESHOLD = 35; // units
+
+  // Check if emitted particles should be re-absorbed into the main body
+  checkReabsorption() {
+    const bodyParticles = this.particles.filter(p => p.type !== 'eye');
+
+    for (const p of this.particles) {
+      // Only check particles that are currently emitted
+      if (!p.isEmitted) continue;
+
+      // Skip eyes (they should never be emitted anyway, but just in case)
+      if (p.type === 'eye') continue;
+
+      // Calculate velocity magnitude
+      const velocityMag = Math.sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y);
+
+      // Check if moving slowly enough
+      if (velocityMag > this.REABSORPTION_VELOCITY_THRESHOLD) continue;
+
+      // Check if near any body particle (in-body)
+      let nearBody = false;
+      for (const bodyP of bodyParticles) {
+        // Skip checking against self
+        if (bodyP.id === p.id) continue;
+
+        // Only consider particles that are not emitted as part of the "main body"
+        if (bodyP.isEmitted) continue;
+
+        const dx = bodyP.position.x - p.position.x;
+        const dy = bodyP.position.y - p.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < this.REABSORPTION_DISTANCE_THRESHOLD) {
+          nearBody = true;
+          break;
+        }
+      }
+
+      // Re-absorb if slow and near body
+      if (nearBody) {
+        p.isEmitted = false;
+      }
+    }
   }
 
   update(dt: number, config: SimulationConfig, mousePos: Vector2 | null, isDragging: boolean) {
@@ -196,8 +251,13 @@ export class PhysicsEngine {
 
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
+    }
 
-      // 5. Boundaries
+    // 4.5. Check for re-absorption of emitted particles
+    this.checkReabsorption();
+
+    // 5. Boundaries
+    for (const p of this.particles) {
       const r = config.particleRadius;
       const bounce = 0.5;
 

@@ -12,6 +12,7 @@ export interface Particle {
   isFixed: boolean;
   radius: number;
   type?: 'body' | 'eye';
+  isEmitted: boolean; // true if launched, false if in-body
 }
 
 export interface SimulationConfig {
