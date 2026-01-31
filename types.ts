@@ -37,3 +37,9 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
 }
+
+export interface KeyboardInput {
+  left: boolean;
+  right: boolean;
+  jump: boolean;
+}

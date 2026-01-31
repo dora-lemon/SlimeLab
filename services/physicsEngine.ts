@@ -1,9 +1,13 @@
-import { Particle, Vector2, SimulationConfig } from '../types';
+import { Particle, Vector2, SimulationConfig, KeyboardInput } from '../types';
 
 export class PhysicsEngine {
   particles: Particle[] = [];
   width: number;
   height: number;
+
+  // Jump state
+  private jumpCooldown: number = 0;
+  private jumpWasPressed: boolean = false;
 
   constructor(width: number, height: number, particleCount: number) {
     this.width = width;
@@ -156,7 +160,7 @@ export class PhysicsEngine {
     }
   }
 
-  update(dt: number, config: SimulationConfig, mousePos: Vector2 | null, isDragging: boolean) {
+  update(dt: number, config: SimulationConfig, mousePos: Vector2 | null, isDragging: boolean, keyboardInput?: KeyboardInput) {
     const N = this.particles.length;
 
     // 1. Reset Forces & Apply Gravity
@@ -229,11 +233,85 @@ export class PhysicsEngine {
             const forceFactor = (1 - dist / config.mouseInteractionRadius);
             p.force.x += dx * forceFactor * config.mouseForce * 0.05;
             p.force.y += dy * forceFactor * config.mouseForce * 0.05;
-            
+
             // Damping near mouse to stabilize grabbing
             p.velocity.x *= 0.8;
             p.velocity.y *= 0.8;
         }
+      }
+    }
+
+    // 3.5. Keyboard Controls (Movement & Jump)
+    if (keyboardInput) {
+      // Force field approach for movement (similar to mouse interaction)
+      // This keeps the slime's shape intact
+      const moveForceMagnitude = 15; // Force field strength
+      const moveFieldRadius = 200; // Radius of the force field
+
+      // Calculate slime center for force field positioning
+      let centerX = 0, centerY = 0, count = 0;
+      for (const p of this.particles) {
+        if (!p.isEmitted) {
+          centerX += p.position.x;
+          centerY += p.position.y;
+          count++;
+        }
+      }
+      if (count > 0) {
+        centerX /= count;
+        centerY /= count;
+      }
+
+      // Apply movement force field to all non-emitted particles
+      for (const p of this.particles) {
+        if (p.isEmitted) continue; // Don't control emitted particles
+
+        // Horizontal movement via force field
+        if (keyboardInput.left || keyboardInput.right) {
+          const direction = keyboardInput.left ? -1 : 1;
+          const targetX = centerX + direction * moveFieldRadius;
+          const dx = targetX - p.position.x;
+          const dy = centerY - p.position.y; // Pull toward center Y to maintain shape
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < moveFieldRadius) {
+            const forceFactor = (1 - dist / moveFieldRadius);
+            p.force.x += direction * forceFactor * moveForceMagnitude * 10;
+          }
+
+          // Direct horizontal force for more responsive movement
+          p.force.x += direction * moveForceMagnitude * 20;
+        }
+      }
+
+      // Jump (impulse-based)
+      const jumpImpulse = 350;
+      const jumpPressed = keyboardInput.jump;
+      const jumpTriggered = jumpPressed && !this.jumpWasPressed;
+
+      // Check if on ground
+      let onGround = false;
+      for (const p of this.particles) {
+        if (!p.isEmitted && p.position.y >= this.height - config.particleRadius - 8) {
+          onGround = true;
+          break;
+        }
+      }
+
+      if (jumpTriggered && onGround && this.jumpCooldown <= 0) {
+        for (const p of this.particles) {
+          if (!p.isEmitted) {
+            p.velocity.y = -jumpImpulse;
+          }
+        }
+        this.jumpCooldown = 0.25;
+      }
+
+      this.jumpWasPressed = jumpPressed;
+
+      // Update cooldown
+      if (this.jumpCooldown > 0) {
+        this.jumpCooldown -= dt;
       }
     }
 

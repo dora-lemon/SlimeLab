@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { PhysicsEngine } from '../services/physicsEngine';
-import { SimulationConfig, Vector2 } from '../types';
+import { SimulationConfig, Vector2, KeyboardInput } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, TIME_STEP, SLIME_COLOR_BASE } from '../constants';
 
 interface SimulationCanvasProps {
@@ -17,19 +17,27 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   const [launchCooldown, setLaunchCooldown] = useState(0);
   const [isCharging, setIsCharging] = useState(false);
   const [chargeStartTime, setChargeStartTime] = useState<number>(0);
+  const keyboardInputRef = useRef<KeyboardInput>({ left: false, right: false, jump: false });
 
   // Initialize engine
   useEffect(() => {
     engineRef.current = new PhysicsEngine(CANVAS_WIDTH, CANVAS_HEIGHT, config.particleCount);
   }, [config.particleCount]); // Re-create if count changes
 
-  // Keyboard handlers for launching particles
+  // Keyboard handlers for movement and launching particles
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Space key: Quick random launch (existing behavior)
-      if ((e.code === 'Space' || e.key === ' ') && launchCooldown <= 0 && engineRef.current) {
-        engineRef.current.launchParticle();
-        setLaunchCooldown(0.3); // 300ms cooldown
+      // Arrow keys for movement
+      if (e.code === 'ArrowLeft') {
+        keyboardInputRef.current.left = true;
+      }
+      if (e.code === 'ArrowRight') {
+        keyboardInputRef.current.right = true;
+      }
+      // Spacebar for jump
+      if ((e.code === 'Space' || e.key === ' ')) {
+        keyboardInputRef.current.jump = true;
+        e.preventDefault(); // Prevent scrolling
       }
 
       // Q key: Start charging for aimed launch
@@ -40,6 +48,18 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      // Arrow keys for movement
+      if (e.code === 'ArrowLeft') {
+        keyboardInputRef.current.left = false;
+      }
+      if (e.code === 'ArrowRight') {
+        keyboardInputRef.current.right = false;
+      }
+      // Spacebar for jump
+      if ((e.code === 'Space' || e.key === ' ')) {
+        keyboardInputRef.current.jump = false;
+      }
+
       // Q key released: Launch charged particle
       if ((e.code === 'KeyQ' || e.key === 'q') && isCharging && engineRef.current && mousePosRef.current) {
         const chargeDuration = Math.min((Date.now() - chargeStartTime) / 1000, 1.0);
@@ -243,7 +263,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     if (!engineRef.current) return;
 
     // Physics Step
-    engineRef.current.update(TIME_STEP, config, mousePosRef.current, isDragging);
+    engineRef.current.update(TIME_STEP, config, mousePosRef.current, isDragging, keyboardInputRef.current);
 
     // Render Step
     const canvas = canvasRef.current;
