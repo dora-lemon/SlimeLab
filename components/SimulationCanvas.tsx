@@ -12,7 +12,6 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   // Re-init physics engine if particle count changes dramatically, but usually we just update
   const engineRef = useRef<PhysicsEngine | null>(null);
   const requestRef = useRef<number>(0);
-  const [isDragging, setIsDragging] = useState(false);
   const mousePosRef = useRef<Vector2 | null>(null);
   const [launchCooldown, setLaunchCooldown] = useState(0);
   const [isCharging, setIsCharging] = useState(false);
@@ -24,14 +23,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     engineRef.current = new PhysicsEngine(CANVAS_WIDTH, CANVAS_HEIGHT, config.particleCount);
   }, [config.particleCount]); // Re-create if count changes
 
-  // Keyboard handlers for movement and launching particles
+  // Keyboard handlers for movement
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Arrow keys for movement
-      if (e.code === 'ArrowLeft') {
+      // A/D keys for movement
+      if (e.code === 'KeyA' || e.key === 'a') {
         keyboardInputRef.current.left = true;
       }
-      if (e.code === 'ArrowRight') {
+      if (e.code === 'KeyD' || e.key === 'd') {
         keyboardInputRef.current.right = true;
       }
       // Spacebar for jump
@@ -39,35 +38,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
         keyboardInputRef.current.jump = true;
         e.preventDefault(); // Prevent scrolling
       }
-
-      // Q key: Start charging for aimed launch
-      if ((e.code === 'KeyQ' || e.key === 'q') && !isCharging && launchCooldown <= 0) {
-        setIsCharging(true);
-        setChargeStartTime(Date.now());
-      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      // Arrow keys for movement
-      if (e.code === 'ArrowLeft') {
+      // A/D keys for movement
+      if (e.code === 'KeyA' || e.key === 'a') {
         keyboardInputRef.current.left = false;
       }
-      if (e.code === 'ArrowRight') {
+      if (e.code === 'KeyD' || e.key === 'd') {
         keyboardInputRef.current.right = false;
       }
       // Spacebar for jump
       if ((e.code === 'Space' || e.key === ' ')) {
         keyboardInputRef.current.jump = false;
-      }
-
-      // Q key released: Launch charged particle
-      if ((e.code === 'KeyQ' || e.key === 'q') && isCharging && engineRef.current && mousePosRef.current) {
-        const chargeDuration = Math.min((Date.now() - chargeStartTime) / 1000, 1.0);
-        const velocity = 200 + chargeDuration * 1000; // 200-1200 range
-
-        engineRef.current.launchChargedParticle(mousePosRef.current, velocity);
-        setLaunchCooldown(0.3);
-        setIsCharging(false);
       }
     };
 
@@ -78,7 +61,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [launchCooldown, isCharging, chargeStartTime]);
+  }, []);
 
   // Update cooldown
   useEffect(() => {
@@ -246,24 +229,13 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     // Charge Indicator
     drawChargeIndicator(ctx);
 
-    // Interaction Hint
-    if (isDragging && mousePosRef.current) {
-        ctx.beginPath();
-        ctx.arc(mousePosRef.current.x, mousePosRef.current.y, config.mouseInteractionRadius, 0, Math.PI*2);
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.2)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
-
-  }, [config, isDragging, drawChargeIndicator]);
+  }, [config, drawChargeIndicator]);
 
   const loop = useCallback(() => {
     if (!engineRef.current) return;
 
     // Physics Step
-    engineRef.current.update(TIME_STEP, config, mousePosRef.current, isDragging, keyboardInputRef.current);
+    engineRef.current.update(TIME_STEP, config, mousePosRef.current, false, keyboardInputRef.current);
 
     // Render Step
     const canvas = canvasRef.current;
@@ -275,7 +247,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     }
 
     requestRef.current = requestAnimationFrame(loop);
-  }, [config, draw, isDragging, drawChargeIndicator]);
+  }, [config, draw, drawChargeIndicator]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(loop);
@@ -299,9 +271,29 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     }
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Left click only
+    if (e.button === 0 && !isCharging && launchCooldown <= 0) {
+      setIsCharging(true);
+      setChargeStartTime(Date.now());
+    }
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    // Left click release to launch
+    if (e.button === 0 && isCharging && engineRef.current && mousePosRef.current) {
+      const chargeDuration = Math.min((Date.now() - chargeStartTime) / 1000, 1.0);
+      const velocity = 200 + chargeDuration * 1000; // 200-1200 range
+
+      engineRef.current.launchChargedParticle(mousePosRef.current, velocity);
+      setLaunchCooldown(0.3);
+      setIsCharging(false);
+    }
+  };
+
   return (
     <div className="relative rounded-xl overflow-hidden shadow-2xl border border-gray-200 bg-white group">
-        
+
         {/* SVG Filter Definition for Metaballs */}
         <svg style={{ position: 'absolute', width: 0, height: 0 }}>
           <defs>
@@ -322,26 +314,54 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
             height={CANVAS_HEIGHT}
             className="cursor-crosshair w-full h-auto block touch-none"
             onMouseMove={handleMouseMove}
-            onMouseDown={() => setIsDragging(true)}
-            onMouseUp={() => { setIsDragging(false); mousePosRef.current = null; }}
-            onMouseLeave={() => { setIsDragging(false); mousePosRef.current = null; }}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              if (isCharging) {
+                setIsCharging(false);
+              }
+              mousePosRef.current = null;
+            }}
             onTouchMove={(e) => {
                  const canvas = canvasRef.current;
                  if (!canvas) return;
-                 
+
                  const rect = canvas.getBoundingClientRect();
                  if (rect && e.touches[0]) {
                      const scaleX = canvas.width / rect.width;
                      const scaleY = canvas.height / rect.height;
-                     
+
                      mousePosRef.current = {
                          x: (e.touches[0].clientX - rect.left) * scaleX,
                          y: (e.touches[0].clientY - rect.top) * scaleY
                      };
                  }
             }}
-            onTouchStart={() => setIsDragging(true)}
-            onTouchEnd={() => { setIsDragging(false); mousePosRef.current = null; }}
+            onTouchStart={(e) => {
+              if (e.touches[0] && !isCharging && launchCooldown <= 0) {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                  const rect = canvas.getBoundingClientRect();
+                  mousePosRef.current = {
+                    x: (e.touches[0].clientX - rect.left) * (canvas.width / rect.width),
+                    y: (e.touches[0].clientY - rect.top) * (canvas.height / rect.height)
+                  };
+                }
+                setIsCharging(true);
+                setChargeStartTime(Date.now());
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (isCharging && engineRef.current && mousePosRef.current) {
+                const chargeDuration = Math.min((Date.now() - chargeStartTime) / 1000, 1.0);
+                const velocity = 200 + chargeDuration * 1000;
+
+                engineRef.current.launchChargedParticle(mousePosRef.current, velocity);
+                setLaunchCooldown(0.3);
+                setIsCharging(false);
+              }
+              mousePosRef.current = null;
+            }}
         />
         
         <div className="absolute top-4 left-4 pointer-events-none transition-opacity opacity-50 group-hover:opacity-100">

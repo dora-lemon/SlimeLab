@@ -2,7 +2,7 @@ import { SimulationConfig } from './types';
 
 export const DEFAULT_CONFIG: SimulationConfig = {
   gravity: 400,
-  particleCount: 120, // More particles for a fluid look
+  particleCount: 30,
   particleRadius: 12, // Visual radius
   
   repulsionStrength: 800, 
