@@ -6,7 +6,11 @@ export type SoundType =
   | 'launch'         // 发射粒子 - 根据蓄力变化
   | 'bounce'         // 落地/碰撞 - 柔和的噗声
   | 'reabsorb'       // 重新吸收 - 吸入声
-  | 'chargeStart';   // 开始蓄力 - 音调爬升
+  | 'chargeStart'    // 开始蓄力 - 音调爬升
+  | 'hurt'           // 受伤 - 短促的疼痛声
+  | 'gameOver'       // 游戏结束 - 失败音效
+  | 'enemyHit'       // 敌人被击中
+  | 'particleDeath'; // 粒子消失
 
 class AudioService {
   private context: AudioContext | null = null;
@@ -80,6 +84,18 @@ class AudioService {
           break;
         case 'chargeStart':
           this.startChargingSound(now);
+          break;
+        case 'hurt':
+          this.playHurtSound(now);
+          break;
+        case 'gameOver':
+          this.playGameOverSound(now);
+          break;
+        case 'enemyHit':
+          this.playEnemyHitSound(now);
+          break;
+        case 'particleDeath':
+          this.playParticleDeathSound(now);
           break;
       }
     } catch (e) {
@@ -270,6 +286,96 @@ class AudioService {
 
     (gain as any).lfo = lfo;
     (gain as any).lfo2 = lfo2;
+  }
+
+  // 受伤音效 - 短促的疼痛声
+  private playHurtSound(now: number): void {
+    if (!this.context || !this.masterGain) return;
+
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    // 使用锯齿波创造更"刺耳"的感觉
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.setTargetAtTime(0, now + 0.02, 0.05);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  // 游戏结束音效 - 失败的下降音调
+  private playGameOverSound(now: number): void {
+    if (!this.context || !this.masterGain) return;
+
+    // 创建一个和弦
+    const notes = [330, 277, 220, 165]; // E4, C#4, A3, E3 下降
+
+    notes.forEach((freq, i) => {
+      const osc = this.context!.createOscillator();
+      const gain = this.context!.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + i * 0.15);
+
+      gain.gain.setValueAtTime(0, now + i * 0.15);
+      gain.gain.linearRampToValueAtTime(0.2, now + i * 0.15 + 0.05);
+      gain.gain.setTargetAtTime(0, now + i * 0.15 + 0.2, 0.1);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+
+      osc.start(now + i * 0.15);
+      osc.stop(now + i * 0.15 + 0.5);
+    });
+  }
+
+  // 敌人被击中音效 - 短促的打击声
+  private playEnemyHitSound(now: number): void {
+    if (!this.context || !this.masterGain) return;
+
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.setTargetAtTime(0, now + 0.02, 0.03);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
+
+  // 粒子消失音效 - 轻微的啵声
+  private playParticleDeathSound(now: number): void {
+    if (!this.context || !this.masterGain) return;
+
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, now);
+    osc.frequency.exponentialRampToValueAtTime(100, now + 0.08);
+
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.setTargetAtTime(0, now + 0.01, 0.02);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.1);
   }
 
   // 清理资源

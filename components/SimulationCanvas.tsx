@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { PhysicsEngine, SoundEvent } from '../services/physicsEngine';
-import { SimulationConfig, Vector2, KeyboardInput } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, TIME_STEP, SLIME_COLOR_BASE } from '../constants';
+import { PhysicsEngine, SoundEvent, GameStateEvent } from '../services/physicsEngine';
+import { SimulationConfig, Vector2, KeyboardInput, GameState } from '../types';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, TIME_STEP, SLIME_COLOR_BASE, MAX_HEALTH } from '../constants';
 import { audioService } from '../services/audioService';
 
 interface SimulationCanvasProps {
@@ -18,6 +18,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   const [isCharging, setIsCharging] = useState(false);
   const [chargeStartTime, setChargeStartTime] = useState<number>(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [gameState, setGameState] = useState<GameState>({
+    isGameOver: false
+  });
+  const [particleCount, setParticleCount] = useState(0);
   const keyboardInputRef = useRef<KeyboardInput>({ left: false, right: false, jump: false });
 
   // Initialize engine
@@ -41,8 +45,36 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
         case 'reabsorb':
           audioService.play('reabsorb');
           break;
+        case 'hurt':
+          audioService.play('hurt');
+          break;
+        case 'gameOver':
+          audioService.play('gameOver');
+          break;
+        case 'enemyHit':
+          audioService.play('enemyHit');
+          break;
+        case 'particleDeath':
+          audioService.play('particleDeath');
+          break;
       }
     };
+
+    // Set up game state change callback
+    engine.onGameStateChange = (state: GameStateEvent) => {
+      setGameState({
+        isGameOver: state.isGameOver
+      });
+      if (state.particleCount !== undefined) {
+        setParticleCount(state.particleCount);
+      }
+    };
+
+    // Initialize game state from engine
+    setGameState({
+      isGameOver: engine.gameState.isGameOver
+    });
+    setParticleCount(engine.particles.length);
 
     engineRef.current = engine;
   }, [config.particleCount, soundEnabled]); // Re-create if count or sound setting changes
@@ -253,6 +285,76 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     // Charge Indicator
     drawChargeIndicator(ctx);
 
+    // --- Pass 4: Render Enemies ---
+    for (const enemy of engine.enemies) {
+      // Skip dead enemies
+      if (enemy.isDead) continue;
+
+      const halfSize = enemy.size / 2;
+
+      // Draw enemy body (red square with slight border)
+      ctx.fillStyle = enemy.color;
+      ctx.fillRect(
+        enemy.position.x - halfSize,
+        enemy.position.y - halfSize,
+        enemy.size,
+        enemy.size
+      );
+
+      // Draw border
+      ctx.strokeStyle = '#b91c1c';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        enemy.position.x - halfSize,
+        enemy.position.y - halfSize,
+        enemy.size,
+        enemy.size
+      );
+
+      // Draw simple face (angry eyes)
+      ctx.fillStyle = 'white';
+      const eyeSize = 6;
+      const eyeY = enemy.position.y - 4;
+      ctx.fillRect(enemy.position.x - 10, eyeY, eyeSize, eyeSize);
+      ctx.fillRect(enemy.position.x + 4, eyeY, eyeSize, eyeSize);
+
+      // Angry pupils
+      ctx.fillStyle = '#1f2937';
+      ctx.fillRect(enemy.position.x - 8, eyeY + 2, 3, 3);
+      ctx.fillRect(enemy.position.x + 6, eyeY + 2, 3, 3);
+
+      // Angry mouth
+      ctx.strokeStyle = '#1f2937';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(enemy.position.x - 6, enemy.position.y + 8);
+      ctx.lineTo(enemy.position.x + 6, enemy.position.y + 8);
+      ctx.stroke();
+
+      // Draw health bar above enemy
+      const healthBarWidth = enemy.size;
+      const healthBarHeight = 4;
+      const healthBarY = enemy.position.y - halfSize - 10;
+      const healthPercent = enemy.health / enemy.maxHealth;
+
+      // Background bar
+      ctx.fillStyle = '#374151';
+      ctx.fillRect(
+        enemy.position.x - healthBarWidth / 2,
+        healthBarY,
+        healthBarWidth,
+        healthBarHeight
+      );
+
+      // Health bar (color based on health)
+      ctx.fillStyle = healthPercent > 0.5 ? '#10b981' : healthPercent > 0.25 ? '#f59e0b' : '#ef4444';
+      ctx.fillRect(
+        enemy.position.x - healthBarWidth / 2,
+        healthBarY,
+        healthBarWidth * healthPercent,
+        healthBarHeight
+      );
+    }
   }, [config, drawChargeIndicator]);
 
   const loop = useCallback(() => {
@@ -414,6 +516,38 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
         >
           {soundEnabled ? '🔊 音效' : '🔇 静音'}
         </button>
+
+        {/* Particle count display */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none">
+          <div className="bg-gray-800/80 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg">
+            <div className="flex items-center gap-2">
+              <span className="text-white text-xs font-bold">史莱姆粒子</span>
+              <span className="text-emerald-400 text-xs font-bold w-8 text-center">
+                {particleCount}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Game Over overlay */}
+        {gameState.isGameOver && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+            <div className="bg-white rounded-2xl p-8 shadow-2xl text-center">
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">游戏结束</h2>
+              <p className="text-gray-600 mb-6">史莱姆被敌人击败了！</p>
+              <button
+                onClick={() => {
+                  if (engineRef.current) {
+                    engineRef.current.resetGame();
+                  }
+                }}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-colors"
+              >
+                重新开始
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   );
 };

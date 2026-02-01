@@ -13,6 +13,8 @@ export interface Particle {
   radius: number;
   type?: 'body' | 'eye';
   isEmitted: boolean; // true if launched, false if in-body
+  health?: number;    // 粒子生命值（发射后）
+  maxHealth?: number; // 最大生命值
 }
 
 export interface SimulationConfig {
@@ -42,4 +44,23 @@ export interface KeyboardInput {
   left: boolean;
   right: boolean;
   jump: boolean;
+}
+
+export interface Enemy {
+  id: number;
+  position: Vector2;
+  velocity: Vector2;
+  size: number;              // 方块边长
+  patrolPoints: Vector2[];   // 巡逻路径点
+  currentPatrolIndex: number;
+  patrolSpeed: number;
+  damage: number;            // 接触伤害
+  color: string;             // 敌人颜色
+  health: number;            // 敌人生命值
+  maxHealth: number;         // 最大生命值
+  isDead?: boolean;          // 是否死亡
+}
+
+export interface GameState {
+  isGameOver: boolean;
 }
