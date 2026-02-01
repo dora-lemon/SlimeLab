@@ -1,13 +1,25 @@
 import { Particle, Vector2, SimulationConfig, KeyboardInput } from '../types';
 
+// 音效事件类型
+export type SoundEvent = {
+  type: 'jump' | 'launch' | 'bounce' | 'reabsorb';
+  intensity?: number;
+};
+
 export class PhysicsEngine {
   particles: Particle[] = [];
   width: number;
   height: number;
 
+  // Sound event callback
+  onSoundEvent?: (event: SoundEvent) => void;
+
   // Jump state
   private jumpCooldown: number = 0;
   private jumpWasPressed: boolean = false;
+
+  // Collision sound cooldown (prevent too many sounds)
+  private bounceSoundCooldown: number = 0;
 
   constructor(width: number, height: number, particleCount: number) {
     this.width = width;
@@ -111,11 +123,80 @@ export class PhysicsEngine {
     // Apply velocity in direction of mouse
     selectedParticle.velocity.x = (dx / distance) * velocityMagnitude;
     selectedParticle.velocity.y = (dy / distance) * velocityMagnitude;
+
+    // Trigger launch sound event with intensity based on velocity
+    const intensity = Math.min(velocityMagnitude / 1200, 1);
+    this.onSoundEvent?.({ type: 'launch', intensity });
   }
 
   // Re-absorption constants
   private readonly REABSORPTION_VELOCITY_THRESHOLD = 50; // units/sec
   private readonly REABSORPTION_DISTANCE_THRESHOLD = 35; // units
+
+  // Check if two particles are connected based on distance
+  private areParticlesConnected(p1: Particle, p2: Particle, connectionDistance: number): boolean {
+    const dx = p2.position.x - p1.position.x;
+    const dy = p2.position.y - p1.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < connectionDistance;
+  }
+
+  // Find the largest connected component (main group) based on particle proximity
+  private findMainGroup(interactionRadius: number): Set<number> {
+    const visited = new Set<number>();
+    let mainGroup: Set<number> = new Set();
+    let maxGroupSize = 0;
+
+    // Build adjacency list
+    const adjacency = new Map<number, Set<number>>();
+    for (let i = 0; i < this.particles.length; i++) {
+      adjacency.set(i, new Set());
+    }
+
+    // Find connections between particles using the connection check function
+    for (let i = 0; i < this.particles.length; i++) {
+      for (let j = i + 1; j < this.particles.length; j++) {
+        const pA = this.particles[i];
+        const pB = this.particles[j];
+
+        if (this.areParticlesConnected(pA, pB, interactionRadius)) {
+          adjacency.get(i)!.add(j);
+          adjacency.get(j)!.add(i);
+        }
+      }
+    }
+
+    // BFS to find connected components
+    for (let i = 0; i < this.particles.length; i++) {
+      if (visited.has(i)) continue;
+
+      const currentGroup: Set<number> = new Set();
+      const queue: number[] = [i];
+
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+
+        if (visited.has(current)) continue;
+        visited.add(current);
+        currentGroup.add(current);
+
+        const neighbors = adjacency.get(current)!;
+        for (const neighbor of neighbors) {
+          if (!visited.has(neighbor)) {
+            queue.push(neighbor);
+          }
+        }
+      }
+
+      // Update main group if current is larger
+      if (currentGroup.size > maxGroupSize) {
+        maxGroupSize = currentGroup.size;
+        mainGroup = currentGroup;
+      }
+    }
+
+    return mainGroup;
+  }
 
   // Check if emitted particles should be re-absorbed into the main body
   checkReabsorption() {
@@ -156,12 +237,17 @@ export class PhysicsEngine {
       // Re-absorb if slow and near body
       if (nearBody) {
         p.isEmitted = false;
+        // Trigger reabsorb sound
+        this.onSoundEvent?.({ type: 'reabsorb' });
       }
     }
   }
 
   update(dt: number, config: SimulationConfig, mousePos: Vector2 | null, isDragging: boolean, keyboardInput?: KeyboardInput) {
     const N = this.particles.length;
+
+    // Find the main group (largest connected component)
+    const mainGroup = this.findMainGroup(config.interactionRadius);
 
     // 1. Reset Forces & Apply Gravity
     for (let i = 0; i < N; i++) {
@@ -221,9 +307,12 @@ export class PhysicsEngine {
       }
     }
 
-    // 3. Mouse Interaction (Force Field)
+    // 3. Mouse Interaction (Force Field) - Only affects main group
     if (mousePos && isDragging) {
-      for (const p of this.particles) {
+      for (let i = 0; i < this.particles.length; i++) {
+        if (!mainGroup.has(i)) continue; // Only affect main group
+
+        const p = this.particles[i];
         const dx = mousePos.x - p.position.x;
         const dy = mousePos.y - p.position.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -241,19 +330,19 @@ export class PhysicsEngine {
       }
     }
 
-    // 3.5. Keyboard Controls (Movement & Jump)
+    // 3.5. Keyboard Controls (Movement & Jump) - Only affects main group
     if (keyboardInput) {
       // Force field approach for movement (similar to mouse interaction)
       // This keeps the slime's shape intact
       const moveForceMagnitude = 15; // Force field strength
       const moveFieldRadius = 200; // Radius of the force field
 
-      // Calculate slime center for force field positioning
+      // Calculate main group center for force field positioning
       let centerX = 0, centerY = 0, count = 0;
-      for (const p of this.particles) {
-        if (!p.isEmitted) {
-          centerX += p.position.x;
-          centerY += p.position.y;
+      for (let i = 0; i < this.particles.length; i++) {
+        if (mainGroup.has(i) && !this.particles[i].isEmitted) {
+          centerX += this.particles[i].position.x;
+          centerY += this.particles[i].position.y;
           count++;
         }
       }
@@ -262,8 +351,10 @@ export class PhysicsEngine {
         centerY /= count;
       }
 
-      // Apply movement force field to all non-emitted particles
-      for (const p of this.particles) {
+      // Apply movement force field to main group particles only
+      for (let i = 0; i < this.particles.length; i++) {
+        if (!mainGroup.has(i)) continue; // Only control main group
+        const p = this.particles[i];
         if (p.isEmitted) continue; // Don't control emitted particles
 
         // Horizontal movement via force field
@@ -284,27 +375,29 @@ export class PhysicsEngine {
         }
       }
 
-      // Jump (impulse-based)
+      // Jump (impulse-based) - Only affects main group
       const jumpImpulse = 350;
       const jumpPressed = keyboardInput.jump;
       const jumpTriggered = jumpPressed && !this.jumpWasPressed;
 
-      // Check if on ground
+      // Check if main group is on ground
       let onGround = false;
-      for (const p of this.particles) {
-        if (!p.isEmitted && p.position.y >= this.height - config.particleRadius - 8) {
+      for (let i = 0; i < this.particles.length; i++) {
+        if (mainGroup.has(i) && !this.particles[i].isEmitted && this.particles[i].position.y >= this.height - config.particleRadius - 8) {
           onGround = true;
           break;
         }
       }
 
       if (jumpTriggered && onGround && this.jumpCooldown <= 0) {
-        for (const p of this.particles) {
-          if (!p.isEmitted) {
-            p.velocity.y = -jumpImpulse;
+        for (let i = 0; i < this.particles.length; i++) {
+          if (mainGroup.has(i) && !this.particles[i].isEmitted) {
+            this.particles[i].velocity.y = -jumpImpulse;
           }
         }
         this.jumpCooldown = 0.25;
+        // Trigger jump sound
+        this.onSoundEvent?.({ type: 'jump' });
       }
 
       this.jumpWasPressed = jumpPressed;
@@ -335,16 +428,26 @@ export class PhysicsEngine {
     this.checkReabsorption();
 
     // 5. Boundaries
+    let playedBounceSound = false;
+    let maxImpactSpeed = 0;
+
     for (const p of this.particles) {
       const r = config.particleRadius;
       const bounce = 0.5;
 
       // Floor
       if (p.position.y > this.height - r) {
+        const impactSpeed = Math.abs(p.velocity.y);
         p.position.y = this.height - r;
         p.velocity.y *= -bounce;
         // Floor friction
         p.velocity.x *= 0.9;
+
+        // Track impact speed for sound
+        if (impactSpeed > maxImpactSpeed) {
+          maxImpactSpeed = impactSpeed;
+        }
+        playedBounceSound = true;
       }
       // Ceiling
       if (p.position.y < r) {
@@ -360,6 +463,18 @@ export class PhysicsEngine {
         p.position.x = r;
         p.velocity.x *= -bounce;
       }
+    }
+
+    // Play bounce sound if there was a significant impact and cooldown allows
+    if (playedBounceSound && maxImpactSpeed > 50 && this.bounceSoundCooldown <= 0) {
+      const intensity = Math.min(maxImpactSpeed / 300, 1);
+      this.onSoundEvent?.({ type: 'bounce', intensity });
+      this.bounceSoundCooldown = 0.1; // 100ms cooldown
+    }
+
+    // Update bounce sound cooldown
+    if (this.bounceSoundCooldown > 0) {
+      this.bounceSoundCooldown -= dt;
     }
   }
 }

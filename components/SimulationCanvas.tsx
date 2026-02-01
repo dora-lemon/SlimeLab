@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { PhysicsEngine } from '../services/physicsEngine';
+import { PhysicsEngine, SoundEvent } from '../services/physicsEngine';
 import { SimulationConfig, Vector2, KeyboardInput } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, TIME_STEP, SLIME_COLOR_BASE } from '../constants';
+import { audioService } from '../services/audioService';
 
 interface SimulationCanvasProps {
   config: SimulationConfig;
@@ -16,12 +17,35 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   const [launchCooldown, setLaunchCooldown] = useState(0);
   const [isCharging, setIsCharging] = useState(false);
   const [chargeStartTime, setChargeStartTime] = useState<number>(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const keyboardInputRef = useRef<KeyboardInput>({ left: false, right: false, jump: false });
 
   // Initialize engine
   useEffect(() => {
-    engineRef.current = new PhysicsEngine(CANVAS_WIDTH, CANVAS_HEIGHT, config.particleCount);
-  }, [config.particleCount]); // Re-create if count changes
+    const engine = new PhysicsEngine(CANVAS_WIDTH, CANVAS_HEIGHT, config.particleCount);
+
+    // Set up sound event callback
+    engine.onSoundEvent = (event: SoundEvent) => {
+      if (!soundEnabled) return;
+
+      switch (event.type) {
+        case 'jump':
+          audioService.play('jump');
+          break;
+        case 'launch':
+          audioService.play('launch', event.intensity || 0.5);
+          break;
+        case 'bounce':
+          audioService.play('bounce', event.intensity || 1);
+          break;
+        case 'reabsorb':
+          audioService.play('reabsorb');
+          break;
+      }
+    };
+
+    engineRef.current = engine;
+  }, [config.particleCount, soundEnabled]); // Re-create if count or sound setting changes
 
   // Keyboard handlers for movement
   useEffect(() => {
@@ -276,6 +300,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     if (e.button === 0 && !isCharging && launchCooldown <= 0) {
       setIsCharging(true);
       setChargeStartTime(Date.now());
+      // Play charging sound
+      if (soundEnabled) {
+        audioService.play('chargeStart');
+      }
     }
   };
 
@@ -319,6 +347,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
             onMouseLeave={() => {
               if (isCharging) {
                 setIsCharging(false);
+                audioService.stopCharging();
               }
               mousePosRef.current = null;
             }}
@@ -349,6 +378,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
                 }
                 setIsCharging(true);
                 setChargeStartTime(Date.now());
+                // Play charging sound
+                if (soundEnabled) {
+                  audioService.play('chargeStart');
+                }
               }
             }}
             onTouchEnd={(e) => {
@@ -369,6 +402,18 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
                 {config.renderMode === 'blob' ? 'Rendering: Metaball + Particles' : 'Rendering: Raw Particles'}
             </span>
         </div>
+
+        {/* Sound toggle button */}
+        <button
+          onClick={() => {
+            setSoundEnabled(!soundEnabled);
+            audioService.setEnabled(!soundEnabled);
+          }}
+          className="absolute top-4 right-4 pointer-events-auto bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold shadow-sm border border-emerald-100 hover:bg-white transition-colors"
+          title={soundEnabled ? '关闭音效' : '开启音效'}
+        >
+          {soundEnabled ? '🔊 音效' : '🔇 静音'}
+        </button>
     </div>
   );
 };
