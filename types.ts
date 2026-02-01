@@ -35,11 +35,6 @@ export interface SimulationConfig {
   renderMode: 'blob' | 'particles' | 'debug';
 }
 
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-}
-
 export interface KeyboardInput {
   left: boolean;
   right: boolean;

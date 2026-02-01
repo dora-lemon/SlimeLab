@@ -6,9 +6,10 @@ import { audioService } from '../services/audioService';
 
 interface SimulationCanvasProps {
   config: SimulationConfig;
+  isPaused?: boolean;
 }
 
-export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) => {
+export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPaused = false }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Re-init physics engine if particle count changes dramatically, but usually we just update
   const engineRef = useRef<PhysicsEngine | null>(null);
@@ -360,10 +361,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   const loop = useCallback(() => {
     if (!engineRef.current) return;
 
-    // Physics Step
-    engineRef.current.update(TIME_STEP, config, mousePosRef.current, false, keyboardInputRef.current);
+    // Physics Step (skip if paused)
+    if (!isPaused) {
+      engineRef.current.update(TIME_STEP, config, mousePosRef.current, false, keyboardInputRef.current);
+    }
 
-    // Render Step
+    // Render Step (always render)
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -373,7 +376,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
     }
 
     requestRef.current = requestAnimationFrame(loop);
-  }, [config, draw, drawChargeIndicator]);
+  }, [config, draw, drawChargeIndicator, isPaused]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(loop);
@@ -422,7 +425,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
   };
 
   return (
-    <div className="relative rounded-xl overflow-hidden shadow-2xl border border-gray-200 bg-white group">
+    <div className="absolute inset-0 overflow-hidden bg-gray-900 group">
 
         {/* SVG Filter Definition for Metaballs */}
         <svg style={{ position: 'absolute', width: 0, height: 0 }}>
@@ -442,7 +445,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config }) =>
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            className="cursor-crosshair w-full h-auto block touch-none"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-full max-h-full cursor-crosshair touch-none"
             onMouseMove={handleMouseMove}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
