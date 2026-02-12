@@ -32,7 +32,7 @@ const App: React.FC = () => {
   }, [handleEscapeKey]);
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-gray-900 font-sans text-gray-900">
+    <div className="w-screen h-screen overflow-hidden bg-white font-sans text-gray-900">
       {/* 游戏画布层 - 始终渲染 */}
       <SimulationCanvas config={config} isPaused={uiState !== 'game'} />
 

@@ -171,13 +171,101 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
     ctx.restore();
   }, [isCharging, chargeStartTime]);
 
+  const drawSlimeParticles = useCallback((ctx: CanvasRenderingContext2D, particles: typeof PhysicsEngine.prototype.particles) => {
+    const { renderMode, particleRadius } = config;
+    const mousePos = mousePosRef.current;
+
+    // --- Pass 1: Render the Liquid Blob (Metaballs) ---
+    ctx.save();
+
+    if (renderMode === 'blob') {
+      ctx.filter = 'url(#goo)';
+    }
+
+    for (const p of particles) {
+      ctx.beginPath();
+      const drawRadius = renderMode === 'blob' ? particleRadius * 1.3 : particleRadius;
+      ctx.arc(p.position.x, p.position.y, drawRadius, 0, Math.PI * 2);
+
+      if (renderMode === 'blob') {
+        ctx.fillStyle = SLIME_COLOR_BASE;
+      } else if (renderMode === 'debug') {
+        const speed = Math.sqrt(p.velocity.x ** 2 + p.velocity.y ** 2);
+        const r = Math.min(255, speed);
+        ctx.fillStyle = `rgb(${r}, 100, 150)`;
+      } else {
+        ctx.fillStyle = SLIME_COLOR_BASE;
+      }
+
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    // --- Pass 2: Render Particle Nuclei (Body only) ---
+    if (renderMode === 'blob') {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      for (const p of particles) {
+        if (p.type !== 'eye') {
+          ctx.beginPath();
+          ctx.arc(p.position.x, p.position.y, particleRadius * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // --- Pass 3: Render Eyes ---
+    if (renderMode === 'blob') {
+      for (const p of particles) {
+        if (p.type === 'eye') {
+          const eyeRadius = particleRadius * 1.3;
+          const pupilRadius = eyeRadius * 0.4;
+
+          // Draw Sclera (White part)
+          ctx.fillStyle = 'white';
+          ctx.beginPath();
+          ctx.arc(p.position.x, p.position.y, eyeRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Calculate pupil position (look at mouse)
+          let pupilOffsetX = 0;
+          let pupilOffsetY = 0;
+
+          if (mousePos) {
+            const dx = mousePos.x - p.position.x;
+            const dy = mousePos.y - p.position.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            const maxOffset = eyeRadius * 0.4;
+            if (dist > 0) {
+              pupilOffsetX = (dx / dist) * maxOffset;
+              pupilOffsetY = (dy / dist) * maxOffset;
+            }
+          }
+
+          // Draw Pupil
+          ctx.fillStyle = '#0f172a';
+          ctx.beginPath();
+          ctx.arc(p.position.x + pupilOffsetX, p.position.y + pupilOffsetY, pupilRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Reflection
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.beginPath();
+          ctx.arc(p.position.x + pupilOffsetX + 2, p.position.y + pupilOffsetY - 2, pupilRadius * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }, [config]);
+
   const draw = useCallback((ctx: CanvasRenderingContext2D) => {
     if (!engineRef.current) return;
     const engine = engineRef.current;
-    
+
     // Clear background
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    
+
     // Background Grid
     ctx.strokeStyle = '#f3f4f6';
     ctx.lineWidth = 1;
@@ -190,98 +278,8 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
     ctx.fillStyle = '#9ca3af';
     ctx.fillRect(0, CANVAS_HEIGHT - 4, CANVAS_WIDTH, 4);
 
-    // --- Pass 1: Render the Liquid Blob (Metaballs) ---
-    // We draw ALL particles (including eyes) here to form the base slime shape
-    ctx.save();
-    
-    if (config.renderMode === 'blob') {
-        // Apply the SVG filter defined in index.html or below
-        ctx.filter = 'url(#goo)'; 
-    }
-
-    for (const p of engine.particles) {
-      ctx.beginPath();
-      // Draw slightly larger radius for the blob merge effect
-      const drawRadius = config.renderMode === 'blob' ? config.particleRadius * 1.3 : config.particleRadius;
-      
-      ctx.arc(p.position.x, p.position.y, drawRadius, 0, Math.PI * 2);
-      
-      if (config.renderMode === 'blob') {
-          ctx.fillStyle = SLIME_COLOR_BASE;
-      } else if (config.renderMode === 'debug') {
-          // Heatmap style velocity
-          const speed = Math.sqrt(p.velocity.x**2 + p.velocity.y**2);
-          const r = Math.min(255, speed);
-          ctx.fillStyle = `rgb(${r}, 100, 150)`;
-      } else {
-          // Simple particles
-          ctx.fillStyle = SLIME_COLOR_BASE;
-      }
-      
-      ctx.fill();
-    }
-    
-    ctx.restore(); // Removes the goo filter
-
-    // --- Pass 2: Render Particle Nuclei (Body only) ---
-    // This allows user to see the individual "balls" inside the envelope
-    if (config.renderMode === 'blob') {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // Semi-transparent white
-        for (const p of engine.particles) {
-            // Only draw nuclei for body particles, avoid drawing inside the eye
-            if (p.type !== 'eye') {
-                ctx.beginPath();
-                ctx.arc(p.position.x, p.position.y, config.particleRadius * 0.4, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-    }
-
-    // --- Pass 3: Render Eyes (Specific Particles) ---
-    // Now eyes are attached to specific particles, so if the slime splits, eyes go with the clumps.
-    if (config.renderMode === 'blob') {
-        for (const p of engine.particles) {
-            if (p.type === 'eye') {
-                const eyeRadius = config.particleRadius * 1.3; 
-                const pupilRadius = eyeRadius * 0.4;
-                
-                // Draw Sclera (White part)
-                ctx.fillStyle = 'white';
-                ctx.beginPath();
-                ctx.arc(p.position.x, p.position.y, eyeRadius, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Calculate pupil position (look at mouse)
-                let pupilOffsetX = 0;
-                let pupilOffsetY = 0;
-                
-                if (mousePosRef.current) {
-                    const dx = mousePosRef.current.x - p.position.x;
-                    const dy = mousePosRef.current.y - p.position.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    
-                    // Limit pupil movement within the eye
-                    const maxOffset = eyeRadius * 0.4; 
-                    if (dist > 0) {
-                        pupilOffsetX = (dx / dist) * maxOffset;
-                        pupilOffsetY = (dy / dist) * maxOffset;
-                    }
-                }
-
-                // Draw Pupil
-                ctx.fillStyle = '#0f172a'; // dark slate
-                ctx.beginPath();
-                ctx.arc(p.position.x + pupilOffsetX, p.position.y + pupilOffsetY, pupilRadius, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Reflection (Cute factor)
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                ctx.beginPath();
-                ctx.arc(p.position.x + pupilOffsetX + 2, p.position.y + pupilOffsetY - 2, pupilRadius * 0.3, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-    }
+    // Draw Slime Particles
+    drawSlimeParticles(ctx, engine.particles);
 
     // Charge Indicator
     drawChargeIndicator(ctx);
@@ -356,7 +354,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
         healthBarHeight
       );
     }
-  }, [config, drawChargeIndicator]);
+  }, [config, drawChargeIndicator, drawSlimeParticles]);
 
   const loop = useCallback(() => {
     if (!engineRef.current) return;
@@ -376,7 +374,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
     }
 
     requestRef.current = requestAnimationFrame(loop);
-  }, [config, draw, drawChargeIndicator, isPaused]);
+  }, [config, draw, drawChargeIndicator, drawSlimeParticles, isPaused]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(loop);
@@ -425,7 +423,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
   };
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-gray-900 group">
+    <div className="absolute inset-0 overflow-hidden bg-gray-50 group">
 
         {/* SVG Filter Definition for Metaballs */}
         <svg style={{ position: 'absolute', width: 0, height: 0 }}>
