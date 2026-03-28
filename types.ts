@@ -59,3 +59,9 @@ export interface Enemy {
 export interface GameState {
   isGameOver: boolean;
 }
+
+export interface AudioConfig {
+  masterVolume: number;    // 主音量 (0-1)
+  sfxVolume: number;        // 音效音量 (0-1)
+  bounceVolume: number;     // 落地音量 (0-1)
+}

@@ -39,3 +39,10 @@ export const PARTICLE_DAMAGE = 15;       // 粒子对敌人的伤害
 
 // Game state constants
 export const MAX_HEALTH = 100;
+
+// Audio settings
+export const DEFAULT_AUDIO_CONFIG = {
+  masterVolume: 0.8,
+  sfxVolume: 1.0,
+  bounceVolume: 1.0,
+};

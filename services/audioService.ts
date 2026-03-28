@@ -20,6 +20,10 @@ class AudioService {
   // 音效开关
   private enabled: boolean = true;
 
+  // 音量设置
+  private sfxVolume: number = 1.0;   // 音效音量
+  private bounceVolume: number = 0.8;  // 落地音量
+
   // 蓄力音效状态
   private chargingOscillator: OscillatorNode | null = null;
   private chargingGain: GainNode | null = null;
@@ -58,6 +62,16 @@ class AudioService {
         this.context?.currentTime || 0,
         0.1
       );
+    }
+  }
+
+  // 设置音量
+  setVolumes(config: { sfxVolume?: number; bounceVolume?: number }): void {
+    if (config.sfxVolume !== undefined) {
+      this.sfxVolume = Math.max(0, Math.min(1, config.sfxVolume));
+    }
+    if (config.bounceVolume !== undefined) {
+      this.bounceVolume = Math.max(0, Math.min(1, config.bounceVolume));
     }
   }
 
@@ -186,8 +200,8 @@ class AudioService {
     osc.frequency.setValueAtTime(100, now);
     osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
 
-    // 根据强度调整音量
-    const volume = Math.min(0.3 * intensity, 0.5);
+    // 根据强度和音量设置调整
+    const volume = Math.min(2.0 * intensity, 2.0) * this.bounceVolume;
     gain.gain.setValueAtTime(volume, now);
     gain.gain.setTargetAtTime(0, now + 0.02, 0.03);
 

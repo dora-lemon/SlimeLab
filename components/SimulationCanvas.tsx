@@ -1,15 +1,16 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { PhysicsEngine, SoundEvent, GameStateEvent } from '../services/physicsEngine';
-import { SimulationConfig, Vector2, KeyboardInput, GameState } from '../types';
+import { SimulationConfig, AudioConfig, Vector2, KeyboardInput, GameState } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, TIME_STEP, SLIME_COLOR_BASE, MAX_HEALTH } from '../constants';
 import { audioService } from '../services/audioService';
 
 interface SimulationCanvasProps {
   config: SimulationConfig;
+  audioConfig: AudioConfig;
   isPaused?: boolean;
 }
 
-export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPaused = false }) => {
+export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, audioConfig, isPaused = false }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Re-init physics engine if particle count changes dramatically, but usually we just update
   const engineRef = useRef<PhysicsEngine | null>(null);
@@ -119,6 +120,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ config, isPa
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Apply audio config changes to audioService
+  useEffect(() => {
+    audioService.setVolumes({
+      sfxVolume: audioConfig.sfxVolume,
+      bounceVolume: audioConfig.bounceVolume,
+    });
+  }, [audioConfig]);
 
   // Update cooldown
   useEffect(() => {
